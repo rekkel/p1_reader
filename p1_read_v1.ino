@@ -15,10 +15,46 @@
 */
 
 #include "dsmr.h"
+#include <util/crc16.h>
+
+
+uint16_t calcCRC(char* str)
+{
+  uint16_t crc=0; // starting value as you like, must be the same before each calculation
+  for (int i=0;i<strlen(str);i++) // for each character in the string
+  {
+    crc= _crc16_update (crc, str[i]); // update the crc value
+  }
+  return crc;
+}
+
+#define BYTE unsigned char
+#define USHORT unsigned short
+
+USHORT crc16(const BYTE *data_p, int length)
+{
+  int pos;
+  int i;
+  USHORT crc = 0x0;
+
+  for (pos = 0; pos < length; pos++)
+  {
+    crc ^= (USHORT) data_p[pos];
+
+    for (i = 0; i < 8; i++)
+    {
+      if ((crc & 0x0001) == 0x0001)
+        crc = (crc >> 1) ^ 0xA001;
+      else
+        crc >>= 1;
+    }
+  }
+  return crc;
+}
+
 
 String to_loraGW = "";
 String ean = "12345678";
-
 
 /**
  * Define the data we're interested in, as well as the datastructure to
@@ -140,15 +176,16 @@ void setup() {
   // start a read right away
   reader.enable(true);
   last = millis();
+
 }
 
 void loop () {
   // Allow the reader to check the serial buffer regularly
   reader.loop();
 
-  // Every 10 sec, fire off a one-off reading
+  // Every 1 sec, fire off a one-off reading
   unsigned long now = millis();
-  if (now - last > 10000) {
+  if (now - last > 1000) {
     reader.enable(true);
     last = now;
   }
@@ -158,20 +195,37 @@ void loop () {
     
     String err;
     String rawdata = reader.raw();
-    //Serial.println(reader.raw());
+ 
     if (reader.parse(&data, &err)) {
-      
-      Serial.println(rawdata);
-      Serial2.println(rawdata);
-      
+            
       to_loraGW = ean + ";" +
                  (String)round(data.voltage_l1) + ";"+(String)round(data.voltage_l3) + ";"+(String)round(data.voltage_l3) + ";" +
                  (String)round(data.current_l1) + ";"+(String)round(data.current_l2) + ";"+(String)round(data.current_l3) + ";"  +  
                  (String)round(data.power_returned_l1/data.voltage_l1) + ";" +
                  (String)round(data.power_returned_l2/data.voltage_l2) + ";" +
-                 (String)round(data.power_returned_l3/data.voltage_l3) ;            
-      Serial.println(to_loraGW);
-      Serial2.println(to_loraGW);
+                 (String)round(data.power_returned_l3/data.voltage_l3) ;                  
+      
+      //char copy_to_loraGW[to_loraGW.length()+1];
+      //to_loraGW.toCharArray(copy_to_loraGW, to_loraGW.length());
+      
+      rawdata += to_loraGW;
+      rawdata += "\r\n";
+      
+      
+      Serial.print("/");
+      Serial2.print("/");
+      Serial.print(rawdata);
+      Serial2.print(rawdata);
+      
+      char copy_rawdata[rawdata.length()];
+      rawdata.toCharArray(copy_rawdata, rawdata.length());
+
+      //Serial.println(calcCRC(copy_rawdata),HEX);
+      //Serial2.println(calcCRC(copy_rawdata),HEX);
+
+      Serial.print("!");  Serial.println(crc16(copy_rawdata, rawdata.length()),HEX);
+      Serial2.print("!"); Serial2.println(crc16(copy_rawdata, rawdata.length()),HEX);
+      
       
     } else {
       // Parser error, print error
@@ -181,7 +235,7 @@ void loop () {
 }
 
 /*
-/SMR5 P1 Emulator
+/DSMR5 P1 Emulator
 
 1-3:0.2.8(50)
 0-0:1.0.0(191218164359W)
