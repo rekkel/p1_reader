@@ -16,7 +16,10 @@
 
 #include "dsmr.h"
 #include <util/crc16.h>
+#include <SPI.h>
+#include <LoRa.h>
 
+bool initLora = true;
 
 uint16_t calcCRC(char* str)
 {
@@ -54,7 +57,7 @@ USHORT crc16(const BYTE *data_p, int length)
 
 
 String to_loraGW = "";
-String ean = "12345678";
+String ean = "87654321";
 
 /**
  * Define the data we're interested in, as well as the datastructure to
@@ -177,6 +180,26 @@ void setup() {
   reader.enable(true);
   last = millis();
 
+  if(initLora){
+    Serial.println("Start Lora");
+    if (!LoRa.begin(868000000)) { // Match to Gateway frequency setting
+      Serial.println("Starting LoRa failed!");
+      while (1);
+    }
+ 
+    LoRa.setSyncWord(0x34); // Match to Gateway sync setting
+    LoRa.onReceive(onReceive); 
+    LoRa_rxMode();
+  }
+}
+
+void LoRa_sendMessage(String message) {
+  Serial.print("Send to Lora: "); Serial.println(message);
+  LoRa_txMode();                        // set tx mode
+  LoRa.beginPacket();
+  LoRa.print(message);
+  LoRa.endPacket();
+  LoRa_rxMode();                        // set rx mode
 }
 
 void loop () {
@@ -205,9 +228,9 @@ void loop () {
                  (String)round(data.power_returned_l2/data.voltage_l2) + ";" +
                  (String)round(data.power_returned_l3/data.voltage_l3) ;                  
       
-      //char copy_to_loraGW[to_loraGW.length()+1];
-      //to_loraGW.toCharArray(copy_to_loraGW, to_loraGW.length());
-      
+      if(initLora){
+        LoRa_sendMessage(to_loraGW);
+      }
       rawdata += to_loraGW;
       rawdata += "\r\n";
       
@@ -233,6 +256,34 @@ void loop () {
     }
   }
 }
+
+
+void onReceive(int packetSize) {
+  // received a packet
+  Serial.print("Received packet '");
+  char message;
+  
+  // read packet
+  for (int i = 0; i < packetSize; i++) {
+    message = (char)LoRa.read();
+    Serial.print(message);
+  }
+
+  // print RSSI of packet
+  Serial.print("' with RSSI ");
+  Serial.println(LoRa.packetRssi());
+}
+
+void LoRa_rxMode(){
+  //LoRa.enableInvertIQ();                // active invert I and Q signals
+  LoRa.receive();                       // set receive mode
+}
+
+void LoRa_txMode(){
+  LoRa.idle();                          // set standby mode
+  //LoRa.disableInvertIQ();               // normal mode
+}
+
 
 /*
 /DSMR5 P1 Emulator
