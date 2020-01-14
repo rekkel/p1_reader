@@ -21,15 +21,7 @@
 
 bool initLora = true;
 
-uint16_t calcCRC(char* str)
-{
-  uint16_t crc=0; // starting value as you like, must be the same before each calculation
-  for (int i=0;i<strlen(str);i++) // for each character in the string
-  {
-    crc= _crc16_update (crc, str[i]); // update the crc value
-  }
-  return crc;
-}
+
 
 #define BYTE unsigned char
 #define USHORT unsigned short
@@ -57,7 +49,15 @@ USHORT crc16(const BYTE *data_p, int length)
 
 
 String to_loraGW = "";
-String ean = "87654321";
+String ean = "";
+String sendCongestion = "87654321;23;45;56;8;9;0";
+
+char recievedCongestion;
+
+int recievedMessage = 0;
+int Congestion = 0;
+
+
 
 /**
  * Define the data we're interested in, as well as the datastructure to
@@ -217,38 +217,53 @@ void loop () {
     MyData data;
     
     String err;
+    String new_rawData;
     String rawdata = reader.raw();
- 
+
     if (reader.parse(&data, &err)) {
-            
-      to_loraGW = ean + ";" +
-                 (String)round(data.voltage_l1) + ";"+(String)round(data.voltage_l3) + ";"+(String)round(data.voltage_l3) + ";" +
-                 (String)round(data.current_l1) + ";"+(String)round(data.current_l2) + ";"+(String)round(data.current_l3) + ";"  +  
-                 (String)round(data.power_returned_l1/data.voltage_l1) + ";" +
-                 (String)round(data.power_returned_l2/data.voltage_l2) + ";" +
-                 (String)round(data.power_returned_l3/data.voltage_l3) ;                  
-      
+
+      ean = data.equipment_id.toInt();
+      //Serial.print("ean");Serial.println(ean); 
+      String spanning_l1 = (String)round(data.voltage_l1);
+      String spanning_l2 = (String)round(data.voltage_l2);
+      String spanning_l3 = (String)round(data.voltage_l3);
+      String stroom_afname_l1 = (String)round(data.current_l1);
+      String stroom_afname_l2 = (String)round(data.current_l2);
+      String stroom_afname_l3 = (String)round(data.current_l3);
+      String stroom_levering_l1 = (String)round(data.power_returned_l1/data.voltage_l1);
+      String stroom_levering_l2 = (String)round(data.power_returned_l2/data.voltage_l2);
+      String stroom_levering_l3 = (String)round(data.power_returned_l3/data.voltage_l3);
+
+      /*    send values to lora gateway   */
       if(initLora){
+        to_loraGW = "<" + ean          + ">;"                     +
+                    spanning_l1        + ";" +spanning_l2         + ";" +spanning_l3          + ";" +
+                    stroom_afname_l1   + ";" +stroom_afname_l2    + ";" +stroom_afname_l3     + ";" +  
+                    stroom_levering_l1 + ";" + stroom_levering_l2 + ";" + stroom_levering_l3  + ";" + Congestion            ;                  
+
         LoRa_sendMessage(to_loraGW);
+      
       }
-      rawdata += to_loraGW;
-      rawdata += "\r\n";
-      
-      
+
+      /*   Change free field with recieved congestion signal   */
+      new_rawData = rawdata;
+      if (recievedMessage == 1){
+        new_rawData = generate_new_p1(rawdata, sendCongestion);
+        recievedMessage = 0;
+      }
+
+      new_rawData += "\r";
+
       Serial.print("/");
       Serial2.print("/");
-      Serial.print(rawdata);
-      Serial2.print(rawdata);
+      Serial.print(new_rawData);
+      Serial2.print(new_rawData);
       
-      char copy_rawdata[rawdata.length()];
-      rawdata.toCharArray(copy_rawdata, rawdata.length());
-
-      //Serial.println(calcCRC(copy_rawdata),HEX);
-      //Serial2.println(calcCRC(copy_rawdata),HEX);
-
-      Serial.print("!");  Serial.println(crc16(copy_rawdata, rawdata.length()),HEX);
-      Serial2.print("!"); Serial2.println(crc16(copy_rawdata, rawdata.length()),HEX);
+      char copy_rawdata[new_rawData.length()];
+      new_rawData.toCharArray(copy_rawdata, new_rawData.length());
       
+      Serial.print("!");  Serial.println(crc16(copy_rawdata, new_rawData.length()),HEX);
+      Serial2.print("!"); Serial2.println(crc16(copy_rawdata, new_rawData.length()),HEX);     
       
     } else {
       // Parser error, print error
@@ -258,20 +273,43 @@ void loop () {
 }
 
 
+String generate_new_p1( String frawdata, String sendCongestion){
+   String fnew_Data = frawdata;
+   String old_congestion = "";
+   
+   int start_index = fnew_Data.indexOf("0-0:96.13.0(") + 12;
+   int end_index   =  fnew_Data.indexOf(')', start_index + 1 ) ;
+
+   old_congestion = fnew_Data.substring(start_index,end_index);
+   fnew_Data.replace(old_congestion,sendCongestion);
+
+   //Serial.print("sendCongestion ");Serial.println(sendCongestion);
+   //Serial.print("old_congestion ");Serial.println(old_congestion);
+
+   return fnew_Data ;  
+}
+
 void onReceive(int packetSize) {
   // received a packet
   Serial.print("Received packet '");
-  char message;
+  
   
   // read packet
   for (int i = 0; i < packetSize; i++) {
-    message = (char)LoRa.read();
-    Serial.print(message);
+    recievedCongestion = (char)LoRa.read();
+    Serial.print(recievedCongestion);
   }
+  
+  //Serial.print("recievedCongestion : "); Serial.println(recievedCongestion);
 
+  sendCongestion = ean + ";25;25;25;0;0;0";
+  Serial.print("sendCongestion : "); Serial.println(sendCongestion);
+  
   // print RSSI of packet
-  Serial.print("' with RSSI ");
-  Serial.println(LoRa.packetRssi());
+  //Serial.print("' with RSSI ");
+  //Serial.println(LoRa.packetRssi());
+
+  recievedMessage = 1;
 }
 
 void LoRa_rxMode(){
@@ -283,85 +321,3 @@ void LoRa_txMode(){
   LoRa.idle();                          // set standby mode
   //LoRa.disableInvertIQ();               // normal mode
 }
-
-
-/*
-/DSMR5 P1 Emulator
-
-1-3:0.2.8(50)
-0-0:1.0.0(191218164359W)
-0-0:96.1.1(0000000000000000000000000000000123)
-1-0:1.8.1(026009.500*kWh)
-1-0:1.8.2(026009.500*kWh)
-1-0:2.8.1(000000.000*kWh)
-1-0:2.8.2(000000.000*kWh)
-0-0:96.14.0(0001)
-1-0:1.7.0(52019.000*kW)
-1-0:2.7.0(00.000*kW)
-0-0:96.7.21(8)
-0-0:96.7.9(2)
-1-0:99.97.0(2)
-1-0:32.32.0(00001)
-1-0:52.32.0(00001)
-1-0:72.32.0(00002)
-1-0:32.36.0(00000)
-1-0:52.36.0(00000)
-1-0:72.36.0(00000)
-0-0:96.13.0(7b22486561646572223a7b22416374696f6e223a22454247446972656374436f6e74726f6c222c2256616c696446726f6d223a2231393130313031323030303053222c2256616c6964546f223a2231393130313031323135303053227d2c22426f6479223a7b22506572696f6473223a5b7b225374617274223a2231393130313031313539303053222c224d78507772223a3230307d2c7b225374617274223a2231393130313031323031303053222c224d78507772223a3131302c224d785068617365496d62616c223a3230302c224d7850777246616c6c62636b223a3630302c22536574506f696e7446616c6c62636b223a38302c2252656672657368496e74657276223a32307d2c7b225374617274223a2231393130313031323031333053222c224c6f6164526564756374223a38307d2c7b225374617274223a2231393130313031323031343053222c224d78507772223a313030302c224d7850777246616c6c62636b223a3830307d2c7b225374617274223a2231393130313031323033303053222c224d785068617365496d62616c223a3430302c224d78507772223a3135307d2c7b225374617274223a2231393130313031323033343053222c224c6f6164526564756374223a39397d2c7b225374617274223a2231393130313031323035303053222c224c6f6164526564756374223a3130307d2c7b225374617274223a2231393130313031323036303053222c2252656672657368496e74657276223a36302c224d7850777246616c6c62636b223a3131307d5d7d7d)
-1-0:32.7.0(226.0*V)
-1-0:52.7.0(233.0*V)
-1-0:72.7.0(233.0*V)
-1-0:31.7.0(105*A)
-1-0:51.7.0(089*A)
-1-0:71.7.0(032*A)
-1-0:21.7.0(23730.000*kW)
-1-0:41.7.0(20737.000*kW)
-1-0:61.7.0(7552.000*kW)
-1-0:22.7.0(00.000*kW)
-1-0:42.7.0(00.000*kW)
-1-0:62.7.0(00.000*kW)
-0-1:24.1.0(003)
-0-1:96.1.0(3232323241424344313233343536373839)
-0-1:24.2.1(181106140010W)(01785.123*m3)
-!BBCA
-
-
-identification: SMR5 P1 Emulator
-p1_version: 50
-timestamp: 191218164550W
-equipment_id: 0000000000000000000000000000000123
-energy_delivered_tariff1: 15572.00kWh
-energy_delivered_tariff2: 15572.00kWh
-energy_returned_tariff1: 0.00kWh
-energy_returned_tariff2: 0.00kWh
-electricity_tariff: 0001
-power_delivered: 31144.00kW
-power_returned: 0.00kW
-electricity_failures: 8
-electricity_long_failures: 2
-electricity_failure_log: (2)
-electricity_sags_l1: 1
-electricity_sags_l2: 1
-electricity_sags_l3: 2
-electricity_swells_l1: 0
-electricity_swells_l2: 0
-electricity_swells_l3: 0
-message_long: 7b22486561646572223a7b22416374696f6e223a22454247446972656374436f6e74726f6c222c2256616c696446726f6d223a2231393130313031323030303053222c2256616c6964546f223a2231393130313031323135303053227d2c22426f6479223a7b22506572696f6473223a5b7b225374617274223a2231393130313031313539303053222c224d78507772223a3230307d2c7b225374617274223a2231393130313031323031303053222c224d78507772223a3131302c224d785068617365496d62616c223a3230302c224d7850777246616c6c62636b223a3630302c22536574506f696e7446616c6c62636b223a38302c2252656672657368496e74657276223a32307d2c7b225374617274223a2231393130313031323031333053222c224c6f6164526564756374223a38307d2c7b225374617274223a2231393130313031323031343053222c224d78507772223a313030302c224d7850777246616c6c62636b223a3830307d2c7b225374617274223a2231393130313031323033303053222c224d785068617365496d62616c223a3430302c224d78507772223a3135307d2c7b225374617274223a2231393130313031323033343053222c224c6f6164526564756374223a39397d2c7b225374617274223a2231393130313031323035303053222c224c6f6164526564756374223a3130307d2c7b225374617274223a2231393130313031323036303053222c2252656672657368496e74657276223a36302c224d7850777246616c6c62636b223a3131307d5d7d7d
-voltage_l1: 239.00V
-voltage_l2: 223.00V
-voltage_l3: 223.00V
-current_l1: 44A
-current_l2: 24A
-current_l3: 67A
-power_delivered_l1: 10516.00kW
-power_delivered_l2: 5352.00kW
-power_delivered_l3: 15276.00kW
-power_returned_l1: 0.00kW
-power_returned_l2: 0.00kW
-power_returned_l3: 0.00kW
-gas_device_type: 3
-gas_equipment_id: 3232323241424344313233343536373839
-gas_delivered: 1785.12m3
-12345678;239;223;223;44;24;67;0;0;0
-
-*/
