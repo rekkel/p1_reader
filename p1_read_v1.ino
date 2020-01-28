@@ -13,51 +13,26 @@
  * https://github.com/matthijskooijman/arduino-dsmr.git
  * 
 */
-
 #include "dsmr.h"
 #include <util/crc16.h>
 #include <SPI.h>
 #include <LoRa.h>
 
-bool initLora = true;
-
-
-
 #define BYTE unsigned char
 #define USHORT unsigned short
+#define DUUR   120000    // 2 x 60 x 1000 milliseconden
+uint32_t timer;          // 32 bits timer
 
-USHORT crc16(const BYTE *data_p, int length)
-{
-  int pos;
-  int i;
-  USHORT crc = 0x0;
+bool initLora = true;
 
-  for (pos = 0; pos < length; pos++)
-  {
-    crc ^= (USHORT) data_p[pos];
-
-    for (i = 0; i < 8; i++)
-    {
-      if ((crc & 0x0001) == 0x0001)
-        crc = (crc >> 1) ^ 0xA001;
-      else
-        crc >>= 1;
-    }
-  }
-  return crc;
-}
-
-
-String to_loraGW = "";
-String ean = "";
-String sendCongestion = "87654321;23;45;56;8;9;0";
+String to_loraGW      = "";
+String ean            = "";
+String sendCongestion = "";
 
 char recievedCongestion;
 
 int recievedMessage = 0;
 int Congestion = 0;
-
-
 
 /**
  * Define the data we're interested in, as well as the datastructure to
@@ -167,6 +142,10 @@ P1Reader reader(&Serial1, 2);
 unsigned long last;
 
 void setup() {
+  // timer setup
+  delay(5);
+  timer = millis();
+  
   Serial.begin(115200);
   Serial1.begin(115200);
   Serial2.begin(115200);
@@ -192,6 +171,21 @@ void setup() {
     LoRa_rxMode();
   }
 }
+
+void resetNaTimer(){
+  
+  if (timer != 0) {
+   // kijk of de timer verlopen is
+   if ((millis() - timer) > DUUR ) {
+      Serial.println("Timer is verlopen....");
+      // timer is verlopen dus doe je ding
+      Congestion = 0;
+      recievedMessage = 0;
+      timer = 0;
+   }
+}
+}
+
 
 void LoRa_sendMessage(String message) {
   Serial.print("Send to Lora: "); Serial.println(message);
@@ -222,8 +216,12 @@ void loop () {
 
     if (reader.parse(&data, &err)) {
 
-      ean = data.equipment_id.toInt();
-      //Serial.print("ean");Serial.println(ean); 
+      ean = decodeHEX(data.equipment_id);
+      int len = ean.length();
+      ean = ean.substring(len - 9, len);
+      
+      Serial.print("ean           ");Serial.println(ean); 
+      
       String spanning_l1 = (String)round(data.voltage_l1);
       String spanning_l2 = (String)round(data.voltage_l2);
       String spanning_l3 = (String)round(data.voltage_l3);
@@ -233,6 +231,31 @@ void loop () {
       String stroom_levering_l1 = (String)round(data.power_returned_l1/data.voltage_l1);
       String stroom_levering_l2 = (String)round(data.power_returned_l2/data.voltage_l2);
       String stroom_levering_l3 = (String)round(data.power_returned_l3/data.voltage_l3);
+
+
+      /*   Change free field with recieved congestion signal   */
+      new_rawData = rawdata;
+      
+      resetNaTimer();
+      
+      if (recievedMessage == 1){
+        
+        new_rawData = generate_new_p1(rawdata, sendCongestion);
+        //recievedMessage = 0;
+      }
+      
+      new_rawData += "\r";
+      Serial.print("/");
+      Serial2.print("/");
+      Serial.print(new_rawData);
+      Serial2.print(new_rawData);
+      
+      char copy_rawdata[new_rawData.length()];
+      new_rawData.toCharArray(copy_rawdata, new_rawData.length());
+      
+      Serial.print("!");  Serial.println(crc16(copy_rawdata, new_rawData.length()),HEX);
+      Serial2.print("!"); Serial2.println(crc16(copy_rawdata, new_rawData.length()),HEX);   
+
 
       /*    send values to lora gateway   */
       if(initLora){
@@ -245,25 +268,6 @@ void loop () {
       
       }
 
-      /*   Change free field with recieved congestion signal   */
-      new_rawData = rawdata;
-      if (recievedMessage == 1){
-        new_rawData = generate_new_p1(rawdata, sendCongestion);
-        recievedMessage = 0;
-      }
-
-      new_rawData += "\r";
-
-      Serial.print("/");
-      Serial2.print("/");
-      Serial.print(new_rawData);
-      Serial2.print(new_rawData);
-      
-      char copy_rawdata[new_rawData.length()];
-      new_rawData.toCharArray(copy_rawdata, new_rawData.length());
-      
-      Serial.print("!");  Serial.println(crc16(copy_rawdata, new_rawData.length()),HEX);
-      Serial2.print("!"); Serial2.println(crc16(copy_rawdata, new_rawData.length()),HEX);     
       
     } else {
       // Parser error, print error
@@ -276,40 +280,65 @@ void loop () {
 String generate_new_p1( String frawdata, String sendCongestion){
    String fnew_Data = frawdata;
    String old_congestion = "";
+   String recieved_ean = "";
+   //String str_ean= "";
    
    int start_index = fnew_Data.indexOf("0-0:96.13.0(") + 12;
    int end_index   =  fnew_Data.indexOf(')', start_index + 1 ) ;
 
-   old_congestion = fnew_Data.substring(start_index,end_index);
-   fnew_Data.replace(old_congestion,sendCongestion);
+   old_congestion = decodeHEX(fnew_Data.substring(start_index,end_index));
+   recieved_ean = sendCongestion.substring(0,16) ;
+   Serial.print("recieved_ean ");Serial.println(recieved_ean);
+   
+   if (recieved_ean.equals(String("EAN00000" + ean)) ){
+    
+     Serial.println("ean is gelijk ");
+     sendCongestion.replace("<" + sendCongestion.substring(1,9) + ">", "EAN00000" + sendCongestion.substring(1,9));
 
-   //Serial.print("sendCongestion ");Serial.println(sendCongestion);
-   //Serial.print("old_congestion ");Serial.println(old_congestion);
+     
+     Serial.print("sendCongestion ");Serial.println(sendCongestion);
+     Serial.print("old_congestion ");Serial.println(old_congestion);
+     Congestion = 1;
+     fnew_Data.replace(fnew_Data.substring(start_index,end_index),decodeSTR(sendCongestion));
+
+   } else {
+     Serial.println("ean is NIET gelijk ");
+   }
 
    return fnew_Data ;  
 }
 
 void onReceive(int packetSize) {
   // received a packet
-  Serial.print("Received packet '");
-  
+  //Serial.print("Received packet '");
+  String phrase = "";
   
   // read packet
   for (int i = 0; i < packetSize; i++) {
     recievedCongestion = (char)LoRa.read();
-    Serial.print(recievedCongestion);
+    //Serial.print(recievedCongestion);
+    phrase = String(phrase + recievedCongestion);
   }
-  
-  //Serial.print("recievedCongestion : "); Serial.println(recievedCongestion);
+  //Serial.print("phrase : "); Serial.println(phrase);
 
-  sendCongestion = ean + ";25;25;25;0;0;0";
-  Serial.print("sendCongestion : "); Serial.println(sendCongestion);
+  String recieved_ean = "EAN00000" + phrase.substring(0,8);
+  //Serial.print("recieved_ean : "); Serial.println(recieved_ean);
+
+  phrase.replace( phrase.substring(0,8) , recieved_ean );
+  //Serial.print("changed phrase : "); Serial.println(phrase);
+
+  sendCongestion = phrase;
+  //Serial.print("sendCongestion : "); Serial.println(sendCongestion);
   
-  // print RSSI of packet
+  //print RSSI of packet
   //Serial.print("' with RSSI ");
   //Serial.println(LoRa.packetRssi());
 
   recievedMessage = 1;
+
+  // Start the timer
+  timer = millis();
+
 }
 
 void LoRa_rxMode(){
@@ -320,4 +349,71 @@ void LoRa_rxMode(){
 void LoRa_txMode(){
   LoRa.idle();                          // set standby mode
   //LoRa.disableInvertIQ();               // normal mode
+}
+
+
+String decodeHEX(String ean_hex){
+
+  String  temp;
+  String ean_bytes = ean_hex;
+  char c;
+  int stringlen = ean_bytes.length() +1 ;
+  char str[stringlen];
+  ean_bytes.toCharArray(str, stringlen);
+
+  char hex[5] = {0};
+  hex[0] = '0';
+  hex[1] = 'X';
+
+  for (int i = 0; i < sizeof(str) ; i += 2) {
+    hex[2] = str[i];
+    hex[3] = str[i+1];
+    int h = strtol(hex, NULL, 16);
+    c = toascii(h);
+    temp = String(temp + c);
+  }
+  return temp;
+}
+
+String decodeSTR(String ean){
+  String  temp;
+  String ean_bytes = ean;
+  int stringlen = ean_bytes.length() +1 ;
+  char ean_char_array[stringlen];
+  ean_bytes.toCharArray(ean_char_array, stringlen);
+
+  int x=0;
+  for (x=0; x < stringlen -1 ; x++){
+    if (x == stringlen){
+        ean_char_array[x] = '\0';
+    } else {
+      char c = ean_char_array[x];
+      uint8_t number = ( c );
+      char Buffer[3];
+      snprintf(Buffer, sizeof(Buffer), "%02X", number);
+      temp = String(temp + Buffer);
+    }
+  }
+  return temp;
+}
+
+USHORT crc16(const BYTE *data_p, int length)
+{
+  int pos;
+  int i;
+  USHORT crc = 0x0;
+
+  for (pos = 0; pos < length; pos++)
+  {
+    crc ^= (USHORT) data_p[pos];
+
+    for (i = 0; i < 8; i++)
+    {
+      if ((crc & 0x0001) == 0x0001)
+        crc = (crc >> 1) ^ 0xA001;
+      else
+        crc >>= 1;
+    }
+  }
+  return crc;
 }
