@@ -17,22 +17,40 @@
 #include <util/crc16.h>
 #include <SPI.h>
 #include <LoRa.h>
+//LED Stuf
+#include <FastLED.h>
+//ssd1306 stuf
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
+#define OLED_RESET 4
+Adafruit_SSD1306 display(OLED_RESET);
+
+
+
+#define NUM_LEDS 4
+#define BRIGHTNESS  100
+#define DATA_PIN 3
+#define CLOCK_PIN 13
+CRGB leds[NUM_LEDS];
+
+//timer Stuf
 #define BYTE unsigned char
 #define USHORT unsigned short
 #define DUUR   120000    // 2 x 60 x 1000 milliseconden
 uint32_t timer;          // 32 bits timer
 
+//MQTT Stuf
 bool initLora = true;
-
 String to_loraGW      = "";
 String ean            = "";
 String sendCongestion = "";
-
 char recievedCongestion;
-
 int recievedMessage = 0;
 int Congestion = 0;
+long message_count = 0;
 
 /**
  * Define the data we're interested in, as well as the datastructure to
@@ -170,6 +188,17 @@ void setup() {
     LoRa.onReceive(onReceive); 
     LoRa_rxMode();
   }
+
+  //Led Stuf
+  FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);
+  FastLED.setBrightness( BRIGHTNESS );
+  groen();
+  
+  //SSD1306 Stuf
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.clearDisplay();
+
+  
 }
 
 void resetNaTimer(){
@@ -182,6 +211,7 @@ void resetNaTimer(){
       Congestion = 0;
       recievedMessage = 0;
       timer = 0;
+      groen();
    }
 }
 }
@@ -204,6 +234,7 @@ void loop () {
   unsigned long now = millis();
   if (now - last > 1000) {
     reader.enable(true);
+    
     last = now;
   }
 
@@ -273,6 +304,14 @@ void loop () {
       // Parser error, print error
       Serial.println(err);
     }
+    
+
+      
+      testscrolltext(floatAlignRigiht(message_count),ean);
+      message_count++;
+      if(message_count == 9999999)
+        message_count=1;
+    
   }
 }
 
@@ -300,7 +339,7 @@ String generate_new_p1( String frawdata, String sendCongestion){
      Serial.print("old_congestion ");Serial.println(old_congestion);
      Congestion = 1;
      fnew_Data.replace(fnew_Data.substring(start_index,end_index),decodeSTR(sendCongestion));
-
+     rood();
    } else {
      Serial.println("ean is NIET gelijk ");
    }
@@ -321,7 +360,7 @@ void onReceive(int packetSize) {
   }
   //Serial.print("phrase : "); Serial.println(phrase);
 
-  String recieved_ean = "EAN00000" + phrase.substring(0,8);
+  String recieved_ean = "EAN000000" + phrase.substring(0,8);
   //Serial.print("recieved_ean : "); Serial.println(recieved_ean);
 
   phrase.replace( phrase.substring(0,8) , recieved_ean );
@@ -416,4 +455,62 @@ USHORT crc16(const BYTE *data_p, int length)
     }
   }
   return crc;
+}
+
+
+//LED Stuf
+void rood(){
+    leds[0] = CRGB::Blue;
+    leds[1] = CRGB::Blue;
+    leds[2] = CRGB::Blue;
+    leds[3] = CRGB::Blue;
+    FastLED.show();
+}
+
+void groen(){
+    leds[0] = CRGB::Green;
+    leds[1] = CRGB::Green;
+    leds[2] = CRGB::Green;
+    leds[3] = CRGB::Green;
+    FastLED.show();
+}
+
+//SSD1306 Stuf
+void testscrolltext(String message, String EAN) {
+  
+  display.clearDisplay();
+  
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(10,5);
+  display.println(message);
+
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(10,25);
+  display.println(EAN);
+
+  display.display();
+}
+
+String floatAlignRigiht ( long num )
+{
+  int    space  = 0;
+  String spaces = "";
+ 
+  //how large is this number?
+  //always assumes value has 2 digits after the decimal point.
+  if ( num < 10 ) space = 6; //10=2chars. 12+2=14, etc
+  else if ( num > 9 && 100 > num ) space = 5;
+  else if ( num >= 100 && 1000 > num) space = 4;
+  else if ( num >= 1000 && 10000 > num) space = 3;
+  else if ( num >= 10000 && 100000 > num) space = 2;
+  else if ( num >= 100000 && 1000000 > num) space = 1;
+  else if ( num >= 1000000 && 10000000 > num) space = 0;
+ 
+  //add the correct amount of spaces infront of our value
+  for ( uint8_t s=0; s<space; s++ ) spaces += F(" ");
+ 
+  //return value (or your code here)
+  return spaces + String ( num );
 }
