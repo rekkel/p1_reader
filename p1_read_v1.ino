@@ -162,7 +162,7 @@ unsigned long last;
 void setup() {
   // timer setup
   delay(5);
-  timer = millis();
+  //timer = millis();
   
   Serial.begin(115200);
   Serial1.begin(115200);
@@ -204,16 +204,17 @@ void setup() {
 void resetNaTimer(){
   
   if (timer != 0) {
-   // kijk of de timer verlopen is
-   if ((millis() - timer) > DUUR ) {
-      Serial.println("Timer is verlopen....");
-      // timer is verlopen dus doe je ding
-      Congestion = 0;
-      recievedMessage = 0;
-      timer = 0;
-      groen();
-   }
-}
+     //Serial.print("millis timer millis-Timer");Serial.print(millis());Serial.print("   ");Serial.print(timer);Serial.print("    ");Serial.println(millis()-timer);
+     // kijk of de timer verlopen is
+     if ((millis() - timer) > DUUR ) {
+        Serial.println("Timer is verlopen....");
+        // timer is verlopen dus doe je ding
+        Congestion = 0;
+        recievedMessage = 0;
+        timer = 0;
+        groen();
+     }
+  }
 }
 
 
@@ -227,12 +228,16 @@ void LoRa_sendMessage(String message) {
 }
 
 void loop () {
+  
+  resetNaTimer();
+  
+  
   // Allow the reader to check the serial buffer regularly
   reader.loop();
 
   // Every 1 sec, fire off a one-off reading
   unsigned long now = millis();
-  if (now - last > 1000) {
+  if (now - last > 5000) {
     reader.enable(true);
     
     last = now;
@@ -252,6 +257,20 @@ void loop () {
       ean = ean.substring(len - 9, len);
       
       Serial.print("ean           ");Serial.println(ean); 
+
+      //String recieved_congestie = "EAN00000012345678;;;;;;";
+      String recieved_congestie = decodeHEX(data.message_long);
+      Serial.print("recieved_congestie      ");Serial.println(recieved_congestie); 
+      Serial.print("recieved_congestie  len ");Serial.println(recieved_congestie.length()); 
+
+      if (recievedMessage != 1){
+        if ( recieved_congestie.length() == 24){
+          groen();
+        } else {
+          oranje();
+        }
+      }
+
       
       String spanning_l1 = (String)round(data.voltage_l1);
       String spanning_l2 = (String)round(data.voltage_l2);
@@ -266,8 +285,10 @@ void loop () {
 
       /*   Change free field with recieved congestion signal   */
       new_rawData = rawdata;
+      Serial.print("recievedMessage ");
+      Serial.println(recievedMessage);
       
-      resetNaTimer();
+      
       
       if (recievedMessage == 1){
         
@@ -322,29 +343,32 @@ String generate_new_p1( String frawdata, String sendCongestion){
    String recieved_ean = "";
    //String str_ean= "";
    
-   int start_index = fnew_Data.indexOf("0-0:96.13.0(") + 12;
-   int end_index   =  fnew_Data.indexOf(')', start_index + 1 ) ;
+   int start_index = frawdata.indexOf("0-0:96.13.0(") + 12;
+   int end_index   =  frawdata.indexOf(')', start_index + 1 ) ;
 
-   old_congestion = decodeHEX(fnew_Data.substring(start_index,end_index));
-   recieved_ean = sendCongestion.substring(0,16) ;
+   Serial.print("start_index    end_index  ");Serial.print(start_index);Serial.println(end_index);
+
+   old_congestion = decodeHEX(frawdata.substring(start_index,end_index));
+   recieved_ean = sendCongestion.substring(0,17) ;
    Serial.print("recieved_ean ");Serial.println(recieved_ean);
    
-   if (recieved_ean.equals(String("EAN00000" + ean)) ){
+   if (recieved_ean.equals(String("EAN000000" + ean)) ){
     
      Serial.println("ean is gelijk ");
-     sendCongestion.replace("<" + sendCongestion.substring(1,9) + ">", "EAN00000" + sendCongestion.substring(1,9));
+     sendCongestion.replace("<" + sendCongestion.substring(1,9) + ">", "EAN000000" + sendCongestion.substring(1,9));
 
      
      Serial.print("sendCongestion ");Serial.println(sendCongestion);
      Serial.print("old_congestion ");Serial.println(old_congestion);
      Congestion = 1;
-     fnew_Data.replace(fnew_Data.substring(start_index,end_index),decodeSTR(sendCongestion));
-     rood();
+     frawdata.replace(frawdata.substring(start_index,end_index),decodeSTR(sendCongestion));
+     
+
    } else {
      Serial.println("ean is NIET gelijk ");
    }
 
-   return fnew_Data ;  
+   return frawdata ;  
 }
 
 void onReceive(int packetSize) {
@@ -358,26 +382,50 @@ void onReceive(int packetSize) {
     //Serial.print(recievedCongestion);
     phrase = String(phrase + recievedCongestion);
   }
-  //Serial.print("phrase : "); Serial.println(phrase);
 
-  String recieved_ean = "EAN000000" + phrase.substring(0,8);
-  //Serial.print("recieved_ean : "); Serial.println(recieved_ean);
-
-  phrase.replace( phrase.substring(0,8) , recieved_ean );
-  //Serial.print("changed phrase : "); Serial.println(phrase);
-
-  sendCongestion = phrase;
-  //Serial.print("sendCongestion : "); Serial.println(sendCongestion);
   
-  //print RSSI of packet
-  //Serial.print("' with RSSI ");
-  //Serial.println(LoRa.packetRssi());
+  if( phrase[0] != '<'){
+    
+  
+    Serial.print("phrase : "); Serial.println(phrase);
+  
+    String recieved_ean = "EAN000000" + phrase.substring(0,8);
+    Serial.print("recieved_ean : "); Serial.println(recieved_ean);
+  
+    phrase.replace( phrase.substring(0,8) , recieved_ean );
+    Serial.print("changed phrase : "); Serial.println(phrase);
+  
+    sendCongestion = phrase;
+    Serial.print("sendCongestion : "); Serial.println(sendCongestion);
+    Serial.println(sendCongestion.length());
+    
+    if (recieved_ean.equals(String("EAN000000" + ean)) ){
+       if( sendCongestion.length() > 23){
+         Serial.println("Congestie WEL voor mij ontvangen");
+         rood();
+         recievedMessage = 1;
+         // Start the timer
+         timer = millis();
+       } else if(sendCongestion.length() == 23) {
+           Serial.println("Einde Congestie vanuit DMS");
+           groen();
+           recievedMessage = 0;
+           timer = 0;
+           Congestion = 0;
+       }
 
-  recievedMessage = 1;
 
-  // Start the timer
-  timer = millis();
+    } else {
+      Serial.println("Congestie NIET voor mij ontvangen");
+    }
 
+    //print RSSI of packet
+    //Serial.print("' with RSSI ");
+    //Serial.println(LoRa.packetRssi());
+    
+  } else {
+    Serial.println("Bericht van andere node ontvangen");
+  }
 }
 
 void LoRa_rxMode(){
@@ -474,6 +522,15 @@ void groen(){
     leds[3] = CRGB::Green;
     FastLED.show();
 }
+
+void oranje(){
+    leds[0] = CRGB::Purple;
+    leds[1] = CRGB::Purple;
+    leds[2] = CRGB::Purple;
+    leds[3] = CRGB::Purple;
+    FastLED.show();
+}
+
 
 //SSD1306 Stuf
 void testscrolltext(String message, String EAN) {
