@@ -291,8 +291,8 @@ void loop () {
       
       
       if (recievedMessage == 1){
-        
-        new_rawData = generate_new_p1(rawdata, sendCongestion);
+        Serial.println("a. start");
+        new_rawData = generate_new_p1(String(rawdata),String(sendCongestion));
         //recievedMessage = 0;
       }
       
@@ -341,41 +341,131 @@ String generate_new_p1( String frawdata, String sendCongestion){
    String fnew_Data = frawdata;
    String old_congestion = "";
    String recieved_ean = "";
-   //String str_ean= "";
    
-   int start_index = frawdata.indexOf("0-0:96.13.0(") + 12;
-   int end_index   =  frawdata.indexOf(')', start_index + 1 ) ;
+   fnew_Data.replace('\r','<');
+   fnew_Data.replace('\n','>');
+   
+   //fnew_Data.replace("3b3b3b3b3b3b","3b32353b3b3b3b3b");
+ 
+   int start_index = fnew_Data.indexOf("0-0:96.13.0(") + 46;
+   int end_index   =  fnew_Data.indexOf(')', start_index + 1 ) ;
 
-   Serial.print("start_index    end_index  ");Serial.print(start_index);Serial.println(end_index);
+   Serial.print("start_index    end_index  ");Serial.print(start_index);Serial.print("   ");Serial.println(end_index);
+   //Serial.print("fnew_Data   ");Serial.println(fnew_Data);
 
-   old_congestion = decodeHEX(frawdata.substring(start_index,end_index));
+ 
+
+   
+
+   old_congestion = fnew_Data.substring(start_index,end_index);
+   Serial.print("old_congestion ");Serial.println(old_congestion);
+   
    recieved_ean = sendCongestion.substring(0,17) ;
    Serial.print("recieved_ean ");Serial.println(recieved_ean);
    
-   if (recieved_ean.equals(String("EAN000000" + ean)) ){
-    
-     Serial.println("ean is gelijk ");
-     sendCongestion.replace("<" + sendCongestion.substring(1,9) + ">", "EAN000000" + sendCongestion.substring(1,9));
-
+   Serial.print("sendCongestion ");Serial.println(sendCongestion);
+   
+   Serial.print("sendCongestion.substring(17) ");Serial.println(sendCongestion.substring(17));
+  
+   Serial.print("compare ");Serial.println("EAN000000" + ean);
+   Serial.print("recieved_ean ");Serial.println(recieved_ean);
+   
      
-     Serial.print("sendCongestion ");Serial.println(sendCongestion);
-     Serial.print("old_congestion ");Serial.println(old_congestion);
+   if (recieved_ean.equals("EAN000000" + ean) ){
+     Serial.println("ean is gelijk ");
+     
      Congestion = 1;
-     frawdata.replace(frawdata.substring(start_index,end_index),decodeSTR(sendCongestion));
+     fnew_Data.replace(old_congestion,decodeSTR(sendCongestion.substring(17)));
+
+   } else {
+     Serial.println("ean is NIET gelijk ");
+   }
+
+   fnew_Data.replace('<','\r');
+   fnew_Data.replace('>','\n');
+
+   return fnew_Data ;  
+}
+
+char* string2char(String command){
+    if(command.length()!=0){
+        char *p = const_cast<char*>(command.c_str());
+        return p;
+    }
+}
+
+
+String generate_new_p1_new( String frawdata, String sendCongestion){
+   
+   char fnewdata[1024];
+   char frawdatatmp[1024];
+   char fsendCongestiontmp[1024];
+   String recieved_ean;
+
+   Serial.println("z. start");
+
+   strcpy(frawdatatmp, string2char(frawdata));
+   Serial.print("0. frawdatatmp [");Serial.print(frawdatatmp);Serial.println("]");
+   strcpy(fsendCongestiontmp, string2char(sendCongestion));
+   Serial.print("01. fsendCongestiontmp [");Serial.print(fsendCongestiontmp);Serial.println("]");
+   /*
+   int len = frawdata.length() + 1;
+   Serial.print("a. len = [");Serial.print(len);Serial.println("]");
+   if(len >= sizeof(frawdatatmp)-1) len = sizeof(frawdatatmp) - 1;
+   Serial.print("b. len = [");Serial.print(len);Serial.println("]");
+   frawdata.toCharArray(frawdatatmp, len);
+   Serial.print("0. frawdatatmp [");Serial.print(frawdatatmp);Serial.println("]");
+   
+   len = sendCongestion.length() + 1;
+   if(len >= sizeof(fsendCongestiontmp)-1) len = sizeof(fsendCongestiontmp) - 1;
+   sendCongestion.toCharArray(fsendCongestiontmp, len);
+   Serial.print("01. fsendCongestiontmp [");Serial.print(fsendCongestiontmp);Serial.println("]");
+   */
+   
+   strcpy(fnewdata, "");
+   char *pfindstartstr;
+   pfindstartstr = strstr(frawdatatmp,"0-0:96.13.0(");
+   if(pfindstartstr != (char*)NULL)
+   {
+     pfindstartstr += 12;
+     Serial.print("1. pfindstartstr [");Serial.print(pfindstartstr);Serial.println("]");
+     memcpy(fnewdata, frawdatatmp, (pfindstartstr-frawdatatmp+1));
+     //Serial.println("ean is gelijk ");
+     char *pfindendstr;
+     pfindendstr = strchr(pfindstartstr,')');
+     if(pfindendstr != (char*)NULL)
+     {
+      Serial.print("2. pfindendstr [");Serial.print(pfindendstr);Serial.println("]");
+      strcpy(fnewdata+(pfindstartstr-frawdatatmp-1), fsendCongestiontmp);
+      Serial.print("3. fnewdata [");Serial.print(fnewdata);Serial.println("]");
+      strcat(fnewdata, pfindendstr); 
+      Serial.print("4. fnewdata [");Serial.print(fnewdata);Serial.println("]");
+     }
+   }
+   
+   Serial.print("sendCongestion ");Serial.println(sendCongestion);
+
+   
+   if (recieved_ean.equals("EAN000000" + ean) ){
+     Serial.println("ean is gelijk ");
+     
+     Congestion = 1;
      
 
    } else {
      Serial.println("ean is NIET gelijk ");
    }
 
+   //return fnewdata ;  
+   
    return frawdata ;  
 }
 
 void onReceive(int packetSize) {
   // received a packet
   //Serial.print("Received packet '");
+
   String phrase = "";
-  
   // read packet
   for (int i = 0; i < packetSize; i++) {
     recievedCongestion = (char)LoRa.read();
@@ -385,6 +475,7 @@ void onReceive(int packetSize) {
 
   
   if( phrase[0] != '<'){
+
     
   
     Serial.print("phrase : "); Serial.println(phrase);
@@ -398,6 +489,7 @@ void onReceive(int packetSize) {
     sendCongestion = phrase;
     Serial.print("sendCongestion : "); Serial.println(sendCongestion);
     Serial.println(sendCongestion.length());
+
     
     if (recieved_ean.equals(String("EAN000000" + ean)) ){
        if( sendCongestion.length() > 23){
