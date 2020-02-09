@@ -22,19 +22,18 @@
 //ssd1306 stuf
 #include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-
-#define OLED_RESET 4
-Adafruit_SSD1306 display(OLED_RESET);
-
-
 
 #define NUM_LEDS 4
-#define BRIGHTNESS  100
+#define BRIGHTNESS 75
 #define DATA_PIN 3
-#define CLOCK_PIN 13
+#define CLOCK_PIN 4
 CRGB leds[NUM_LEDS];
+
+#define ROOD 1
+#define PAARS 2
+#define GROEN 3
+
+int kleur = GROEN;
 
 //timer Stuf
 #define BYTE unsigned char
@@ -193,11 +192,8 @@ void setup() {
   FastLED.addLeds<APA102, DATA_PIN, CLOCK_PIN, RGB>(leds, NUM_LEDS);
   FastLED.setBrightness( BRIGHTNESS );
   groen();
+  kleur = GROEN;
   
-  //SSD1306 Stuf
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  display.clearDisplay();
-
   
 }
 
@@ -213,6 +209,7 @@ void resetNaTimer(){
         recievedMessage = 0;
         timer = 0;
         groen();
+        kleur = GROEN;
      }
   }
 }
@@ -235,7 +232,7 @@ void loop () {
   // Allow the reader to check the serial buffer regularly
   reader.loop();
 
-  // Every 1 sec, fire off a one-off reading
+  // Every 5 sec, fire off a one-off reading
   unsigned long now = millis();
   if (now - last > 5000) {
     reader.enable(true);
@@ -244,6 +241,7 @@ void loop () {
   }
 
   if (reader.available()) {
+    Serial.println("reader is available");
     MyData data;
     
     String err;
@@ -266,8 +264,10 @@ void loop () {
       if (recievedMessage != 1){
         if ( recieved_congestie.length() == 24){
           groen();
+          kleur = GROEN;
         } else {
-          oranje();
+          paars();
+          kleur = PAARS;
         }
       }
 
@@ -326,14 +326,28 @@ void loop () {
       Serial.println(err);
     }
     
-
-      
-      testscrolltext(floatAlignRigiht(message_count),ean);
+      geel();
+      //testscrolltext(floatAlignRight(message_count),ean);
       message_count++;
       if(message_count == 9999999)
         message_count=1;
+      Serial.print("count up message and ipdate display ");      Serial.println(message_count);
+      resetkleur(kleur);
+
     
   }
+}
+
+void resetkleur(int kleur){
+   //delay(1000);
+   if (kleur == GROEN)
+      groen();
+   else if (kleur == ROOD)
+      rood();
+   else if (kleur == PAARS)
+      paars();
+    
+  
 }
 
 
@@ -495,12 +509,14 @@ void onReceive(int packetSize) {
        if( sendCongestion.length() > 23){
          Serial.println("Congestie WEL voor mij ontvangen");
          rood();
+         kleur = ROOD;
          recievedMessage = 1;
          // Start the timer
          timer = millis();
        } else if(sendCongestion.length() == 23) {
            Serial.println("Einde Congestie vanuit DMS");
            groen();
+           kleur = GROEN;
            recievedMessage = 0;
            timer = 0;
            Congestion = 0;
@@ -615,51 +631,60 @@ void groen(){
     FastLED.show();
 }
 
-void oranje(){
-    leds[0] = CRGB::Purple;
-    leds[1] = CRGB::Purple;
-    leds[2] = CRGB::Purple;
-    leds[3] = CRGB::Purple;
+void paars(){
+    leds[0] = CRGB::LightBlue;
+    leds[1] = CRGB::LightBlue;
+    leds[2] = CRGB::LightBlue;
+    leds[3] = CRGB::LightBlue;
     FastLED.show();
 }
 
+void geel(){
+    /*
+    leds[0] = CRGB::Black;
+    leds[1] = CRGB::Black;
+    leds[2] = CRGB::Black;
+    leds[3] = CRGB::Black;
+    FastLED.show();
+    leds[0] = CRGB::Gold;
+    FastLED.show();
+    delay(200);
+    leds[1] = CRGB::Gold;
+    FastLED.show();
+    delay(200);
+    leds[2] = CRGB::Gold;
+    FastLED.show();
+    delay(200);
+    leds[3] = CRGB::Gold;
+    FastLED.show();
+    delay(200);
+    */
+    leds[0] = CRGB::Black;
+    leds[1] = CRGB::Black;
+    leds[2] = CRGB::Black;
+    leds[3] = CRGB::Black;
+    FastLED.show();
+    delay(200);
+    leds[0] = CRGB::Gold;
+    leds[1] = CRGB::Gold;
+    leds[2] = CRGB::Gold;
+    leds[3] = CRGB::Gold;
+    FastLED.show();
+    delay(200);
+   leds[0] = CRGB::Black;
+    leds[1] = CRGB::Black;
+    leds[2] = CRGB::Black;
+    leds[3] = CRGB::Black;
+    FastLED.show();
+    delay(200);
+    leds[0] = CRGB::Gold;
+    leds[1] = CRGB::Gold;
+    leds[2] = CRGB::Gold;
+    leds[3] = CRGB::Gold;
+    FastLED.show();
+    delay(200);
 
-//SSD1306 Stuf
-void testscrolltext(String message, String EAN) {
-  
-  display.clearDisplay();
-  
-  display.setTextSize(2);
-  display.setTextColor(WHITE);
-  display.setCursor(10,5);
-  display.println(message);
 
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(10,25);
-  display.println(EAN);
 
-  display.display();
-}
-
-String floatAlignRigiht ( long num )
-{
-  int    space  = 0;
-  String spaces = "";
- 
-  //how large is this number?
-  //always assumes value has 2 digits after the decimal point.
-  if ( num < 10 ) space = 6; //10=2chars. 12+2=14, etc
-  else if ( num > 9 && 100 > num ) space = 5;
-  else if ( num >= 100 && 1000 > num) space = 4;
-  else if ( num >= 1000 && 10000 > num) space = 3;
-  else if ( num >= 10000 && 100000 > num) space = 2;
-  else if ( num >= 100000 && 1000000 > num) space = 1;
-  else if ( num >= 1000000 && 10000000 > num) space = 0;
- 
-  //add the correct amount of spaces infront of our value
-  for ( uint8_t s=0; s<space; s++ ) spaces += F(" ");
- 
-  //return value (or your code here)
-  return spaces + String ( num );
+    
 }
